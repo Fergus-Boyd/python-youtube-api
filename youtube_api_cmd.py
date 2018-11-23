@@ -22,7 +22,7 @@ YOUTUBE_COMMENT_URL = 'https://www.googleapis.com/youtube/v3/commentThreads'
 class YouTubeApi():
 
     def load_comments(self, mat):
-        colNames = ['commentID', 'parentID', 'author', 'time', 'comment', 'likes']
+        colNames = ['commentID', 'parentID', 'author', 'time', 'comment', 'likes', 'noReplies']
         df = pd.DataFrame(columns=colNames)
         for item in mat["items"]:
             comment = item["snippet"]["topLevelComment"]
@@ -33,7 +33,12 @@ class YouTubeApi():
             time = comment["snippet"]["publishedAt"]
             like = comment["snippet"]["likeCount"]
 
-            comment_df = pd.DataFrame([[cmID, paID, autr, time, text, like], ], columns=colNames)
+            if 'replies' in item.keys():
+                rply = len(item['replies']['comments'])
+            else:
+                rply = 0
+
+            comment_df = pd.DataFrame([[cmID, paID, autr, time, text, like, rply], ], columns=colNames)
             df = df.append(comment_df, ignore_index=True)
 
             if 'replies' in item.keys():
@@ -44,9 +49,11 @@ class YouTubeApi():
                     rtext = reply["snippet"]["textDisplay"]
                     rtime = reply["snippet"]["publishedAt"]
                     rlike = reply["snippet"]["likeCount"]
+                    rrply = None
 
-                    reply_df = pd.DataFrame([[rcmID, rpaID, rautr, rtime, rtext, rlike], ], columns=colNames)
+                    reply_df = pd.DataFrame([[rcmID, rpaID, rautr, rtime, rtext, rlike, rrply], ], columns=colNames)
                     df = df.append(reply_df, ignore_index=True)
+
         return df
 
     def get_video_comment(self, vid, key, max_return=20):
