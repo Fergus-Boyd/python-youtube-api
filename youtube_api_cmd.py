@@ -17,9 +17,12 @@ import pandas as pd
 from urllib.parse import urlparse, urlencode, parse_qs
 from urllib.request import urlopen
 
-YOUTUBE_COMMENT_URL = 'https://www.googleapis.com/youtube/v3/commentThreads'
-
 class YouTubeApi():
+
+    def __init__(self, api_key):
+        self.key = api_key
+        self.comment_url = 'https://www.googleapis.com/youtube/v3/commentThreads'
+        self.replies_url = 'https://www.googleapis.com/youtube/v3/comments'
 
     def load_comments(self, mat):
         colNames = ['commentID', 'parentID', 'author', 'time', 'comment', 'likes', 'noReplies']
@@ -32,41 +35,28 @@ class YouTubeApi():
             text = comment["snippet"]["textDisplay"]
             time = comment["snippet"]["publishedAt"]
             like = comment["snippet"]["likeCount"]
-
-            if 'replies' in item.keys():
-                rply = len(item['replies']['comments'])
-            else:
-                rply = 0
+            rply = item["snippet"]["totalReplyCount"]
 
             comment_df = pd.DataFrame([[cmID, paID, autr, time, text, like, rply], ], columns=colNames)
             df = df.append(comment_df, ignore_index=True)
 
-            if 'replies' in item.keys():
-                for reply in item['replies']['comments']:
-                    rcmID = reply['id']
-                    rpaID = reply["snippet"]["parentId"]
-                    rautr = reply['snippet']['authorDisplayName']
-                    rtext = reply["snippet"]["textDisplay"]
-                    rtime = reply["snippet"]["publishedAt"]
-                    rlike = reply["snippet"]["likeCount"]
-                    rrply = None
-
-                    reply_df = pd.DataFrame([[rcmID, rpaID, rautr, rtime, rtext, rlike, rrply], ], columns=colNames)
-                    df = df.append(reply_df, ignore_index=True)
+            if rply > 0:
+                reply_df = self.get_comment_replies(parent_id=cmID)
+                df = df.append(reply_df, ignore_index=True)
 
         return df
 
-    def get_video_comment(self, vid, key, max_return=20):
+    def get_video_comment(self, vid, max_return=100):
         parms = {
                     'part': 'snippet,replies',
                     'maxResults': max_return,
                     'videoId': vid,
                     'textFormat': 'plainText',
-                    'key': key
+                    'key': self.key
                 }
 
         try:
-            matches = self.openURL(YOUTUBE_COMMENT_URL, parms)
+            matches = self.openURL(self.comment_url, parms)
             i = 2
             mat = json.loads(matches)
             nextPageToken = mat.get("nextPageToken")
@@ -74,7 +64,7 @@ class YouTubeApi():
 
             while nextPageToken:
                 parms.update({'pageToken': nextPageToken})
-                matches = self.openURL(YOUTUBE_COMMENT_URL, parms)
+                matches = self.openURL(self.comment_url, parms)
                 mat = json.loads(matches)
                 nextPageToken = mat.get("nextPageToken")
 
@@ -86,7 +76,57 @@ class YouTubeApi():
             print("User Aborted the Operation")
 
         except:
-            print("Cannot Open URL or Fetch comments at a moment")
+            print("Cannot open URL or fetch comments at the moment")
+
+    def get_comment_replies(self, parent_id, max_return=100):
+        parms = {
+                    'part': 'snippet',
+                    'maxResults': max_return,
+                    'parentId': parent_id,
+                    'textFormat': 'plainText',
+                    'key': self.key
+                }
+
+        try:
+            matches = self.openURL(self.replies_url, parms)
+            i = 2
+            mat = json.loads(matches)
+            nextPageToken = mat.get("nextPageToken")
+            all_replies = self.load_replies(mat)
+
+            while nextPageToken:
+                parms.update({'pageToken': nextPageToken})
+                matches = self.openURL(self.replies_url, parms)
+                mat = json.loads(matches)
+                nextPageToken = mat.get("nextPageToken")
+
+                new_replies = self.load_replies(mat)
+                all_replies = all_replies.append(new_replies, ignore_index=True)
+
+            return all_replies
+        except KeyboardInterrupt:
+            print("User Aborted the Operation")
+
+        except:
+            print("Cannot fetch replies at the moment")
+
+    def load_replies(self, mat):
+        colNames = ['commentID', 'parentID', 'author', 'time', 'comment', 'likes', 'noReplies']
+        df = pd.DataFrame(columns=colNames)
+        for item in mat["items"]:
+            cmID = item['id']
+            paID = item["snippet"]["parentId"]
+            autr = item["snippet"]["authorDisplayName"]
+            text = item["snippet"]["textDisplay"]
+            time = item["snippet"]["publishedAt"]
+            like = item["snippet"]["likeCount"]
+            rply = None
+
+            reply_df = pd.DataFrame([[cmID, paID, autr, time, text, like, rply], ], columns=colNames)
+            df = df.append(reply_df, ignore_index=True)
+
+        return df
+
 
     def openURL(self, url, parms):
             f = urlopen(url + '?' + urlencode(parms))
